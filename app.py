@@ -13,6 +13,16 @@ import zipfile
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+# --- Dummy Handler for Vercel Build Compatibility ---
+def handler(request, response=None):
+    return {
+        "statusCode": 200,
+        "body": "ChatPulse Streamlit application. Please run locally or deploy on Streamlit Community Cloud."
+    }
+
+app = handler
+
 import os
 import shutil
 import zlib
@@ -1075,16 +1085,7 @@ if (df_raw is not None and not df_raw.empty) or (shared_kpis is not None):
         st.info("Note: Anyone with this link can view the aggregated statistics and visual graphs of your chat analysis.")
 
 
-# --- Dummy Handler for Vercel Build Compatibility ---
-def handler(request, response=None):
-    return {
-        "statusCode": 200,
-        "body": "ChatPulse Streamlit application. Please run locally or deploy on Streamlit Community Cloud."
-    }
-
-app = handler
-
-
 else:
     if uploaded_file is None and not use_sample:
         st.info("Upload a WhatsApp export file (.txt or .zip) from the sidebar to begin, or click 'Use Sample Data Demo' to see it in action.")
+
