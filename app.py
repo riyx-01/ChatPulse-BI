@@ -18,6 +18,16 @@ import shutil
 import zlib
 import json
 
+# Safe import for python-pptx
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    pptx_installed = True
+except ImportError:
+    pptx_installed = False
+
+
 # --- Dummy Handler for Vercel Build Compatibility ---
 def handler(request, response=None):
     return {
@@ -578,7 +588,70 @@ def load_share_string(share_str):
 # --- Streamlit execution container (ONLY executes when running inside Streamlit runtime context) ---
 if st.runtime.exists():
     # --- UI Rendering Code ---
+    st.set_page_config(page_title="ChatPulse BI", page_icon="📈", layout="wide")
     
+    plotly_template = "plotly_white"
+    
+    st.markdown("""
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+    }
+    .top-nav {
+        display: flex;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 1rem 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    .top-nav img {
+        height: 40px;
+        margin-right: 15px;
+    }
+    .top-nav h1 {
+        margin: 0;
+        font-size: 1.8rem;
+        font-weight: 700;
+        background: linear-gradient(90deg, #1B4EF5, #5996FF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .insight-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-left: 4px solid #1B4EF5;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-top: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        color: #1e293b;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #1B4EF5 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+        st.markdown(f"""
+        <div class="top-nav">
+            <img src="data:image/png;base64,{logo_b64}" alt="Logo">
+            <h1>ChatPulse BI</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="top-nav">
+            <h1>ChatPulse BI</h1>
+        </div>
+        """, unsafe_allow_html=True)
+
     # Sidebar
     with st.sidebar:
         st.markdown("### Data Source")
