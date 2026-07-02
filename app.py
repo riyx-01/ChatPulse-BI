@@ -146,6 +146,16 @@ st.markdown(f"""
         color: white !important;
         box-shadow: 0 4px 12px rgba(27, 78, 245, 0.2);
     }}
+    
+    .insight-card {{
+        background: rgba(27, 78, 245, 0.05);
+        border-left: 4px solid #1B4EF5;
+        padding: 15px;
+        border-radius: 4px;
+        margin-top: 15px;
+        font-size: 0.95rem;
+        color: #1e293b;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,7 +184,6 @@ def sanitize_pdf_text(text):
         if ord(char) < 256:
             cleaned.append(char)
         else:
-            # Fallback for unicode/emojis to avoid FPDF crashes
             cleaned.append("?")
     return "".join(cleaned)
 
@@ -201,7 +210,6 @@ def plot_activity_heatmap(ax, df):
     ax.set_title("Activity Heatmap (Day vs Hour)")
 
 def plot_user_volume(ax, df):
-    # Sanitize user names for plots
     names = [sanitize_pdf_text(name) for name in df['user_name']]
     ax.barh(names, df['count'], color='#5996FF')
     ax.set_xlabel("Messages")
@@ -246,7 +254,7 @@ def plot_weekend_vs_weekday(ax, df):
     ax.set_title("Weekend vs Weekday")
 
 # --- Report Creators ---
-def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats):
+def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats, insights):
     """Generates a highly structured and readable PDF report with Matplotlib charts and data tables."""
     pdf = FPDF()
     pdf.add_page()
@@ -298,7 +306,7 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats):
     pdf.ln(15)
 
     # Plot helper function to add page with plot
-    def add_plot_to_pdf(title, plot_func, df_arg, extra_palette=None):
+    def add_plot_to_pdf(title, plot_func, df_arg, insight_text, extra_palette=None):
         pdf.add_page()
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, sanitize_pdf_text(title), ln=True, align='C')
@@ -318,26 +326,32 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats):
         plt.close(fig)
         
         pdf.image(img_buffer, x=15, y=30, w=180)
+        
+        # Add written insight text below chart
+        pdf.set_y(175)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, sanitize_pdf_text("Business Intelligence Insight:"), ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 6, sanitize_pdf_text(insight_text))
 
     palette = ['#1B4EF5', '#3874FF', '#5996FF', '#F4CEFF']
     
     # Append fallback graphs to PDF safely
-    add_plot_to_pdf("Messages per Day Over Time", plot_messages_per_day, data_frames["daily_vol"])
-    add_plot_to_pdf("Messages by Hour of Day", plot_messages_per_hour, data_frames["hourly_vol"])
-    add_plot_to_pdf("Activity Heatmap", plot_activity_heatmap, data_frames["heatmap_pivot"])
-    add_plot_to_pdf("Message Count per User", plot_user_volume, data_frames["user_vol"])
-    add_plot_to_pdf("Conversation Share", plot_convo_share, data_frames["user_vol"], palette)
-    add_plot_to_pdf("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"])
-    add_plot_to_pdf("Median Response Time by User", plot_median_response_time, data_frames["median_resp"])
-    add_plot_to_pdf("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"])
-    add_plot_to_pdf("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"])
-    add_plot_to_pdf("Conversation Starters", plot_starters, data_frames["starters"], palette)
-    add_plot_to_pdf("Weekend vs Weekday", plot_weekend_vs_weekday, data_frames["weekend_vol"])
+    add_plot_to_pdf("Messages per Day Over Time", plot_messages_per_day, data_frames["daily_vol"], insights["daily_vol"])
+    add_plot_to_pdf("Messages by Hour of Day", plot_messages_per_hour, data_frames["hourly_vol"], insights["hourly_vol"])
+    add_plot_to_pdf("Activity Heatmap", plot_activity_heatmap, data_frames["heatmap_pivot"], insights["heatmap"])
+    add_plot_to_pdf("Message Count per User", plot_user_volume, data_frames["user_vol"], insights["user_vol"])
+    add_plot_to_pdf("Conversation Share", plot_convo_share, data_frames["user_vol"], insights["user_share"], palette)
+    add_plot_to_pdf("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"], insights["response_time"])
+    add_plot_to_pdf("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"], insights["sentiment_trend"])
+    add_plot_to_pdf("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"], insights["sentiment_compare"])
+    add_plot_to_pdf("Conversation Starters", plot_starters, data_frames["starters"], insights["starters"], palette)
+    add_plot_to_pdf("Weekend vs Weekday", plot_weekend_vs_weekday, data_frames["weekend_vol"], insights["weekend_vol"])
 
     return pdf.output(dest='S')
 
 
-def generate_pptx_report(kpi_dict, data_frames, user_stats):
+def generate_pptx_report(kpi_dict, data_frames, user_stats, insights):
     """Generates a PowerPoint presentation using python-pptx in Day light theme."""
     if not pptx_installed:
         return None
@@ -425,20 +439,20 @@ def generate_pptx_report(kpi_dict, data_frames, user_stats):
         table.cell(row_idx+1, 4).text = f"{row['median_response_time']:.1f}"
         table.cell(row_idx+1, 5).text = f"{row['avg_sentiment']:.2f}"
 
-    # Helper function to add slides with chart images
-    def add_chart_slide(title, plot_func, df_arg, extra_palette=None):
+    # Helper function to add slides with chart images and insights
+    def add_chart_slide(title, plot_func, df_arg, insight_text, extra_palette=None):
         slide = prs.slides.add_slide(blank_layout)
         set_light_background(slide)
         
-        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9.0), Inches(1.0))
+        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9.0), Inches(0.8))
         p = txBox.text_frame.paragraphs[0]
         p.text = title
         p.font.bold = True
-        p.font.size = Pt(32)
+        p.font.size = Pt(28)
         p.font.color.rgb = RGBColor(27, 78, 245)
         
-        fig, ax = plt.subplots(figsize=(8, 4.5))
-        plt.style.use('default') # Light styles for presentations
+        fig, ax = plt.subplots(figsize=(6, 3.8))
+        plt.style.use('default') 
         
         if extra_palette:
             plot_func(ax, df_arg, extra_palette)
@@ -450,22 +464,38 @@ def generate_pptx_report(kpi_dict, data_frames, user_stats):
         img_buffer.seek(0)
         plt.close(fig)
         
-        slide.shapes.add_picture(img_buffer, Inches(1.0), Inches(1.5), Inches(8.0), Inches(4.5))
+        slide.shapes.add_picture(img_buffer, Inches(0.5), Inches(1.1), Inches(5.8), Inches(3.8))
+        
+        # Add Insight Text box on the right of the slide
+        txBox_insight = slide.shapes.add_textbox(Inches(6.5), Inches(1.1), Inches(3.0), Inches(3.8))
+        tf_ins = txBox_insight.text_frame
+        tf_ins.word_wrap = True
+        
+        p_ins_title = tf_ins.paragraphs[0]
+        p_ins_title.text = "BI Insight:"
+        p_ins_title.font.bold = True
+        p_ins_title.font.size = Pt(16)
+        p_ins_title.font.color.rgb = RGBColor(27, 78, 245)
+        p_ins_title.space_after = Pt(10)
+        
+        p_ins_desc = tf_ins.add_paragraph()
+        p_ins_desc.text = sanitize_pdf_text(insight_text)
+        p_ins_desc.font.size = Pt(14)
+        p_ins_desc.font.color.rgb = RGBColor(71, 85, 105)
 
     palette = ['#1B4EF5', '#3874FF', '#5996FF', '#F4CEFF']
     
     # Add Visualizations Slides
-    add_chart_slide("Messages per Day Over Time", plot_messages_per_day, data_frames["daily_vol"])
-    add_chart_slide("Messages by Hour of Day", plot_messages_per_hour, data_frames["hourly_vol"])
-    add_chart_slide("Activity Heatmap", plot_activity_heatmap, data_frames["heatmap_pivot"])
-    add_chart_slide("Message Count per User", plot_user_volume, data_frames["user_vol"])
-    add_chart_slide("Conversation Share", plot_convo_share, data_frames["user_vol"], palette)
-    add_chart_slide("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"])
-    add_chart_slide("Median Response Time by User", plot_median_response_time, data_frames["median_resp"])
-    add_chart_slide("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"])
-    add_chart_slide("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"])
-    add_chart_slide("Conversation Starters", plot_starters, data_frames["starters"], palette)
-    add_chart_slide("Weekend vs Weekday", plot_weekend_vs_weekday, data_frames["weekend_vol"])
+    add_chart_slide("Messages per Day Over Time", plot_messages_per_day, data_frames["daily_vol"], insights["daily_vol"])
+    add_chart_slide("Messages by Hour of Day", plot_messages_per_hour, data_frames["hourly_vol"], insights["hourly_vol"])
+    add_chart_slide("Activity Heatmap", plot_activity_heatmap, data_frames["heatmap_pivot"], insights["heatmap"])
+    add_chart_slide("Message Count per User", plot_user_volume, data_frames["user_vol"], insights["user_vol"])
+    add_chart_slide("Conversation Share", plot_convo_share, data_frames["user_vol"], insights["user_share"], palette)
+    add_chart_slide("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"], insights["response_time"])
+    add_chart_slide("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"], insights["sentiment_trend"])
+    add_chart_slide("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"], insights["sentiment_compare"])
+    add_chart_slide("Conversation Starters", plot_starters, data_frames["starters"], insights["starters"], palette)
+    add_chart_slide("Weekend vs Weekday", plot_weekend_vs_weekday, data_frames["weekend_vol"], insights["weekend_vol"])
     
     ppt_buffer = io.BytesIO()
     prs.save(ppt_buffer)
@@ -783,6 +813,68 @@ if df_raw is not None and not df_raw.empty:
     weekend_vol['day_type'] = weekend_vol['is_weekend'].map({True: 'Weekend', False: 'Weekday'})
     data_frames["weekend_vol"] = weekend_vol
     
+    # --- DYNAMIC BUSINESS INTELLIGENCE INSIGHTS ---
+    insights = {}
+    
+    # 1. Daily Volume Insight
+    max_day_row = daily_vol.loc[daily_vol['count'].idxmax()]
+    insights["daily_vol"] = f"Activity peaked on {max_day_row['full_date'].strftime('%Y-%m-%d')} with {max_day_row['count']} messages sent. The line graph shows communication trends and patterns over time."
+    
+    # 2. Hourly Volume Insight
+    peak_hr = hourly_vol.loc[hourly_vol['count'].idxmax()]['hour_of_day']
+    insights["hourly_vol"] = f"Communication is most concentrated at hour {peak_hr}:00, indicating a clear peak time for group interactions during this part of the day."
+    
+    # 3. Heatmap Insight
+    insights["heatmap"] = f"The density distribution shows active interaction slots. Darker areas represent the absolute highest-volume hours in the week."
+    
+    # 4. User Volume Insight
+    if len(user_stats) > 0:
+        top_u = user_stats.iloc[0]['user_name']
+        top_u_count = user_stats.iloc[0]['total_messages']
+        insights["user_vol"] = f"{top_u} is the primary messaging driver with {top_u_count:,} messages. There is a clear divide in engagement levels among active users."
+        insights["user_share"] = f"{top_u} controls the largest share of voice in the group. This pie chart highlights who dominates the overall conversation flow."
+    else:
+        insights["user_vol"] = "No user metrics available."
+        insights["user_share"] = "No user conversation share metrics available."
+        
+    # 5. Response Time Insight
+    if len(avg_resp) > 0:
+        fast_u = avg_resp.iloc[0]['user_name']
+        fast_t = avg_resp.iloc[0]['avg_resp']
+        slow_u = avg_resp.iloc[-1]['user_name']
+        slow_t = avg_resp.iloc[-1]['avg_resp']
+        insights["response_time"] = f"{fast_u} responds the quickest (avg {fast_t:.1f} minutes), while {slow_u} has the longest delay (avg {slow_t:.1f} minutes)."
+    else:
+        insights["response_time"] = "No response metrics available."
+        
+    # 6. Sentiment Trend Insight
+    insights["sentiment_trend"] = "The rolling sentiment chart highlights the overall group mood progression. Upswings indicate positive interaction periods."
+    
+    # 7. Sentiment Compare Insight
+    if len(user_sent) > 0:
+        pos_u = user_sent.iloc[-1]['user_name']
+        pos_v = user_sent.iloc[-1]['sentiment_score']
+        neg_u = user_sent.iloc[0]['user_name']
+        neg_v = user_sent.iloc[0]['sentiment_score']
+        insights["sentiment_compare"] = f"{pos_u} exhibits the most positive sentiment index ({pos_v:.2f}), whereas {neg_u} averages the most negative index ({neg_v:.2f})."
+    else:
+        insights["sentiment_compare"] = "No sentiment metrics available."
+        
+    # 8. Starters Insight
+    if len(starters) > 0:
+        top_start = starters.iloc[0]['user_name']
+        top_start_count = starters.iloc[0]['count']
+        insights["starters"] = f"{top_start} is the primary conversation catalyst, initiating the group chat {top_start_count} times."
+    else:
+        insights["starters"] = "No starter stats available."
+        
+    # 9. Weekend Vol Insight
+    weekday_c = weekend_vol[weekend_vol['day_type']=='Weekday']['count'].values
+    weekend_c = weekend_vol[weekend_vol['day_type']=='Weekend']['count'].values
+    wd_val = weekday_c[0] if len(weekday_c)>0 else 1
+    we_val = weekend_c[0] if len(weekend_c)>0 else 0
+    insights["weekend_vol"] = f"Weekday volume is {wd_val:,} messages vs Weekend volume of {we_val:,} messages. Communication shifts significantly based on the workweek schedule."
+
     st.markdown("<br>", unsafe_allow_html=True)
     
     # --- APP TABS ---
@@ -792,10 +884,12 @@ if df_raw is not None and not df_raw.empty:
         c1, c2 = st.columns(2)
         fig_daily = px.line(daily_vol, x='full_date', y='count', title="Messages per Day Over Time", template=plotly_template, color_discrete_sequence=custom_palette)
         c1.plotly_chart(fig_daily, use_container_width=True)
+        c1.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['daily_vol']}</div>", unsafe_allow_html=True)
         
         fig_hourly = px.bar(hourly_vol, x='hour_of_day', y='count', title="Messages by Hour of Day", template=plotly_template, color_discrete_sequence=custom_palette)
         fig_hourly.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
         c2.plotly_chart(fig_hourly, use_container_width=True)
+        c2.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['hourly_vol']}</div>", unsafe_allow_html=True)
         
         fig_heatmap = px.imshow(
             heatmap_pivot, 
@@ -807,14 +901,17 @@ if df_raw is not None and not df_raw.empty:
             title="Activity Heatmap (Day vs Hour)"
         )
         st.plotly_chart(fig_heatmap, use_container_width=True)
+        st.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['heatmap']}</div>", unsafe_allow_html=True)
 
     with tab2:
         c3, c4 = st.columns(2)
         fig_user_vol = px.bar(user_vol, x='count', y='user_name', orientation='h', title="Message Count per User", template=plotly_template, color_discrete_sequence=custom_palette)
         c3.plotly_chart(fig_user_vol, use_container_width=True)
+        c3.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['user_vol']}</div>", unsafe_allow_html=True)
         
         fig_share = px.pie(user_vol, values='count', names='user_name', title="Conversation Share (%)", template=plotly_template, hole=0.3, color_discrete_sequence=custom_palette)
         c4.plotly_chart(fig_share, use_container_width=True)
+        c4.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['user_share']}</div>", unsafe_allow_html=True)
         
         st.markdown("### User Ranking & Statistics")
         st.dataframe(user_stats, use_container_width=True)
@@ -823,16 +920,20 @@ if df_raw is not None and not df_raw.empty:
         c5, c6 = st.columns(2)
         fig_sent_time = px.line(daily_sentiment, x='full_date', y='rolling_7d', title="Rolling 7-Day Average Sentiment", template=plotly_template, color_discrete_sequence=custom_palette)
         c5.plotly_chart(fig_sent_time, use_container_width=True)
+        c5.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['sentiment_trend']}</div>", unsafe_allow_html=True)
         
         fig_sent_user = px.bar(user_sent, x='user_name', y='sentiment_score', title="Average Sentiment by User", template=plotly_template, color='sentiment_score', color_continuous_scale="RdBu")
         c6.plotly_chart(fig_sent_user, use_container_width=True)
+        c6.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['sentiment_compare']}</div>", unsafe_allow_html=True)
         
         c7, c8 = st.columns(2)
         fig_starters = px.pie(starters, values='count', names='user_name', title="Conversation Starters", template=plotly_template, hole=0.3, color_discrete_sequence=custom_palette)
         c7.plotly_chart(fig_starters, use_container_width=True)
+        c7.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['starters']}</div>", unsafe_allow_html=True)
         
         fig_weekend = px.bar(weekend_vol, x='day_type', y='count', title="Weekend vs Weekday", template=plotly_template, color='day_type', color_discrete_sequence=custom_palette)
         c8.plotly_chart(fig_weekend, use_container_width=True)
+        c8.markdown(f"<div class='insight-card'><b>Analysis Insight:</b> {insights['weekend_vol']}</div>", unsafe_allow_html=True)
         
     with tab4:
         st.markdown("### Export BI Presentations & Reports")
@@ -850,11 +951,11 @@ if df_raw is not None and not df_raw.empty:
         
         with c_pdf:
             st.markdown("#### PDF Report")
-            st.write("Download a detailed and fully labeled PDF document containing all tables and charts.")
+            st.write("Download a detailed and fully labeled PDF document containing all tables, charts, and analysis conclusions.")
             if st.button("Generate PDF Report", type="primary", use_container_width=True):
                 with st.spinner("Compiling PDF Report..."):
                     try:
-                        pdf_bytes = generate_pdf_report_with_fallback(kpis, data_frames, user_stats)
+                        pdf_bytes = generate_pdf_report_with_fallback(kpis, data_frames, user_stats, insights)
                         b64 = base64.b64encode(pdf_bytes).decode()
                         href = f'<a href="data:application/pdf;base64,{b64}" download="ChatPulse_Report.pdf" class="btn" style="display:block; text-align:center; padding:10px; background:#1B4EF5; color:white; border-radius:8px; text-decoration:none; font-weight:bold;">Download PDF Report</a>'
                         st.markdown(href, unsafe_allow_html=True)
@@ -864,14 +965,14 @@ if df_raw is not None and not df_raw.empty:
                         
         with c_ppt:
             st.markdown("#### PowerPoint Presentation")
-            st.write("Generate a formatted slide deck matching the dashboard layout and visual themes.")
+            st.write("Generate a formatted slide deck matching the dashboard layout, visual themes, and insights.")
             if not pptx_installed:
                 st.warning("The 'python-pptx' library is missing or could not be loaded. Please run 'pip install python-pptx' to activate presentation slide generation.")
             else:
                 if st.button("Generate PPTX Slides", type="primary", use_container_width=True):
                     with st.spinner("Creating Presentation Slides..."):
                         try:
-                            pptx_bytes = generate_pptx_report(kpis, data_frames, user_stats)
+                            pptx_bytes = generate_pptx_report(kpis, data_frames, user_stats, insights)
                             b64 = base64.b64encode(pptx_bytes).decode()
                             href = f'<a href="data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,{b64}" download="ChatPulse_Presentation.pptx" class="btn" style="display:block; text-align:center; padding:10px; background:#3874FF; color:white; border-radius:8px; text-decoration:none; font-weight:bold;">Download Presentation</a>'
                             st.markdown(href, unsafe_allow_html=True)
