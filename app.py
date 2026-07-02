@@ -15,6 +15,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 import shutil
+import zlib
+import json
 
 # Safe import for python-pptx
 try:
@@ -111,7 +113,8 @@ st.markdown(f"""
         font-size: 2.2rem;
     }}
     
-    .stButton>button {{
+    /* Styled buttons for downloads */
+    .stDownloadButton>button {{
         background: linear-gradient(135deg, #1B4EF5 0%, #3874FF 100%) !important;
         color: #ffffff !important;
         border: none !important;
@@ -120,8 +123,9 @@ st.markdown(f"""
         font-weight: 600 !important;
         box-shadow: 0 4px 15px rgba(27, 78, 245, 0.2);
         transition: all 0.2s ease;
+        width: 100%;
     }}
-    .stButton>button:hover {{
+    .stDownloadButton>button:hover {{
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(56, 116, 255, 0.3);
     }}
@@ -263,26 +267,26 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats, insight
     pdf.set_fill_color(27, 78, 245)
     pdf.rect(0, 0, 210, 40, 'F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 24)
-    pdf.cell(0, 20, sanitize_pdf_text("ChatPulse BI Insights Report"), ln=True, align='C')
+    pdf.set_font("helvetica", 'B', 24)
+    pdf.cell(0, 20, sanitize_pdf_text("ChatPulse BI Insights Report"), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(15)
     
     # Executive Summary Box
     pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, sanitize_pdf_text("Executive Summary Statistics"), ln=True)
-    pdf.set_font("Arial", '', 12)
+    pdf.set_font("helvetica", 'B', 16)
+    pdf.cell(0, 10, sanitize_pdf_text("Executive Summary Statistics"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("helvetica", '', 12)
     pdf.ln(2)
     
     for kpi, val in kpi_dict.items():
-        pdf.cell(0, 8, sanitize_pdf_text(f" - {kpi}: {val}"), ln=True)
+        pdf.cell(0, 8, sanitize_pdf_text(f" - {kpi}: {val}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(10)
     
     # Detailed User Engagement Table
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, sanitize_pdf_text("User Engagement & Behavior Statistics"), ln=True)
-    pdf.set_font("Arial", '', 10)
+    pdf.set_font("helvetica", 'B', 16)
+    pdf.cell(0, 10, sanitize_pdf_text("User Engagement & Behavior Statistics"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("helvetica", '', 10)
     pdf.ln(5)
     
     # Table Headers
@@ -308,8 +312,8 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats, insight
     # Plot helper function to add page with plot
     def add_plot_to_pdf(title, plot_func, df_arg, insight_text, extra_palette=None):
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, sanitize_pdf_text(title), ln=True, align='C')
+        pdf.set_font("helvetica", 'B', 16)
+        pdf.cell(0, 10, sanitize_pdf_text(title), new_x="LMARGIN", new_y="NEXT", align='C')
         pdf.ln(5)
         
         fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -327,11 +331,10 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats, insight
         
         pdf.image(img_buffer, x=15, y=30, w=180)
         
-        # Add written insight text below chart
         pdf.set_y(175)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, sanitize_pdf_text("Business Intelligence Insight:"), ln=True)
-        pdf.set_font("Arial", '', 11)
+        pdf.set_font("helvetica", 'B', 12)
+        pdf.cell(0, 10, sanitize_pdf_text("Business Intelligence Insight:"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("helvetica", '', 11)
         pdf.multi_cell(0, 6, sanitize_pdf_text(insight_text))
 
     palette = ['#1B4EF5', '#3874FF', '#5996FF', '#F4CEFF']
@@ -343,12 +346,13 @@ def generate_pdf_report_with_fallback(kpi_dict, data_frames, user_stats, insight
     add_plot_to_pdf("Message Count per User", plot_user_volume, data_frames["user_vol"], insights["user_vol"])
     add_plot_to_pdf("Conversation Share", plot_convo_share, data_frames["user_vol"], insights["user_share"], palette)
     add_plot_to_pdf("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"], insights["response_time"])
+    add_plot_to_pdf("Median Response Time by User", plot_median_response_time, data_frames["median_resp"], insights["response_time"])
     add_plot_to_pdf("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"], insights["sentiment_trend"])
     add_plot_to_pdf("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"], insights["sentiment_compare"])
     add_plot_to_pdf("Conversation Starters", plot_starters, data_frames["starters"], insights["starters"], palette)
     add_plot_to_pdf("Weekend vs Weekday", plot_weekend_vs_weekday, data_frames["weekend_vol"], insights["weekend_vol"])
 
-    return pdf.output(dest='S')
+    return bytes(pdf.output())
 
 
 def generate_pptx_report(kpi_dict, data_frames, user_stats, insights):
@@ -466,7 +470,6 @@ def generate_pptx_report(kpi_dict, data_frames, user_stats, insights):
         
         slide.shapes.add_picture(img_buffer, Inches(0.5), Inches(1.1), Inches(5.8), Inches(3.8))
         
-        # Add Insight Text box on the right of the slide
         txBox_insight = slide.shapes.add_textbox(Inches(6.5), Inches(1.1), Inches(3.0), Inches(3.8))
         tf_ins = txBox_insight.text_frame
         tf_ins.word_wrap = True
@@ -492,6 +495,7 @@ def generate_pptx_report(kpi_dict, data_frames, user_stats, insights):
     add_chart_slide("Message Count per User", plot_user_volume, data_frames["user_vol"], insights["user_vol"])
     add_chart_slide("Conversation Share", plot_convo_share, data_frames["user_vol"], insights["user_share"], palette)
     add_chart_slide("Average Response Time by User", plot_avg_response_time, data_frames["avg_resp"], insights["response_time"])
+    add_chart_slide("Median Response Time by User", plot_median_response_time, data_frames["median_resp"], insights["response_time"])
     add_chart_slide("Rolling 7-Day Average Sentiment", plot_rolling_sentiment, data_frames["daily_sentiment"], insights["sentiment_trend"])
     add_chart_slide("Average Sentiment by User", plot_avg_sentiment, data_frames["user_sent"], insights["sentiment_compare"])
     add_chart_slide("Conversation Starters", plot_starters, data_frames["starters"], insights["starters"], palette)
@@ -500,6 +504,59 @@ def generate_pptx_report(kpi_dict, data_frames, user_stats, insights):
     ppt_buffer = io.BytesIO()
     prs.save(ppt_buffer)
     return ppt_buffer.getvalue()
+
+
+# --- URL sharing compression/decompression helpers ---
+def get_share_string(kpi_dict, data_frames, user_stats):
+    share_data = {
+        "kpis": kpi_dict,
+        "user_stats": user_stats.to_dict(orient="records"),
+        "daily_vol": data_frames["daily_vol"].to_dict(orient="records") if "daily_vol" in data_frames else [],
+        "hourly_vol": data_frames["hourly_vol"].to_dict(orient="records") if "hourly_vol" in data_frames else [],
+        "heatmap_pivot": data_frames["heatmap_pivot"].reset_index().to_dict(orient="records") if "heatmap_pivot" in data_frames else [],
+        "user_vol": data_frames["user_vol"].to_dict(orient="records") if "user_vol" in data_frames else [],
+        "avg_resp": data_frames["avg_resp"].to_dict(orient="records") if "avg_resp" in data_frames else [],
+        "median_resp": data_frames["median_resp"].to_dict(orient="records") if "median_resp" in data_frames else [],
+        "daily_sentiment": data_frames["daily_sentiment"].to_dict(orient="records") if "daily_sentiment" in data_frames else [],
+        "user_sent": data_frames["user_sent"].to_dict(orient="records") if "user_sent" in data_frames else [],
+        "starters": data_frames["starters"].to_dict(orient="records") if "starters" in data_frames else [],
+        "weekend_vol": data_frames["weekend_vol"].to_dict(orient="records") if "weekend_vol" in data_frames else [],
+    }
+    json_str = json.dumps(share_data, default=str)
+    compressed = zlib.compress(json_str.encode('utf-8'))
+    return base64.urlsafe_b64encode(compressed).decode('utf-8')
+
+def load_share_string(share_str):
+    try:
+        compressed = base64.urlsafe_b64decode(share_str.encode('utf-8'))
+        json_str = zlib.decompress(compressed).decode('utf-8')
+        share_data = json.loads(json_str)
+        
+        dfs = {
+            "daily_vol": pd.DataFrame(share_data["daily_vol"]),
+            "hourly_vol": pd.DataFrame(share_data["hourly_vol"]),
+            "user_vol": pd.DataFrame(share_data["user_vol"]),
+            "avg_resp": pd.DataFrame(share_data["avg_resp"]),
+            "median_resp": pd.DataFrame(share_data["median_resp"]),
+            "daily_sentiment": pd.DataFrame(share_data["daily_sentiment"]),
+            "user_sent": pd.DataFrame(share_data["user_sent"]),
+            "starters": pd.DataFrame(share_data["starters"]),
+            "weekend_vol": pd.DataFrame(share_data["weekend_vol"]),
+        }
+        
+        if "heatmap_pivot" in share_data and share_data["heatmap_pivot"]:
+            df_hm = pd.DataFrame(share_data["heatmap_pivot"])
+            df_hm = df_hm.set_index("day_name")
+            dfs["heatmap_pivot"] = df_hm
+            
+        if not dfs["daily_vol"].empty:
+            dfs["daily_vol"]["full_date"] = pd.to_datetime(dfs["daily_vol"]["full_date"])
+        if not dfs["daily_sentiment"].empty:
+            dfs["daily_sentiment"]["full_date"] = pd.to_datetime(dfs["daily_sentiment"]["full_date"])
+            
+        return share_data["kpis"], dfs, pd.DataFrame(share_data["user_stats"])
+    except:
+        return None, None, None
 
 
 # --- Zip Handling & Parser ---
@@ -694,10 +751,21 @@ with st.sidebar:
         - WhatsApp Web does not natively export chats. However, you can select the text, copy/paste it into a `.txt` file, or use a browser extension to export the conversation log.
         """)
 
-# Process Data
+# --- Process Data (Normal upload / Sample OR shared URL link) ---
 df_raw = None
+shared_kpis = None
+shared_dfs = None
+shared_user_stats = None
 
-if uploaded_file is not None:
+# Check for query parameters for dashboard sharing
+query_params = st.query_params
+if "share" in query_params:
+    shared_kpis, shared_dfs, shared_user_stats = load_share_string(query_params["share"])
+
+if shared_kpis is not None:
+    st.info("Showing shared stats from the custom URL link. Reset by clearing URL parameters.")
+    df_raw = pd.DataFrame() # dummy triggers display
+elif uploaded_file is not None:
     try:
         if uploaded_file.name.endswith('.zip'):
             content = extract_zip(uploaded_file)
@@ -716,32 +784,165 @@ elif use_sample:
 
 custom_palette = ['#1B4EF5', '#3874FF', '#5996FF', '#F4CEFF']
 
-if df_raw is not None and not df_raw.empty:
-    with st.spinner("Processing Data Model & Running Analytics..."):
-        dim_date, dim_user, fact_message = build_data_model(df_raw)
+if (df_raw is not None and not df_raw.empty) or (shared_kpis is not None):
+    
+    if shared_kpis is not None:
+        # Load from shared variables directly
+        kpis = shared_kpis
+        data_frames = shared_dfs
+        user_stats = shared_user_stats
         
-    if fact_message.empty:
-        st.error("Could not parse messages. Please ensure the file is a valid WhatsApp export.")
-        st.stop()
+        total_messages = int(kpis["Total Messages"])
+        unique_users = int(kpis["Unique Users"])
+        avg_msg_per_day = kpis["Average Messages / Day"]
+        most_active_user = kpis["Most Active User"]
+        peak_hour_str = kpis["Peak Activity Hour"]
+        avg_sentiment = float(kpis["Average Sentiment Score"])
         
+        daily_vol = data_frames["daily_vol"]
+        hourly_vol = data_frames["hourly_vol"]
+        heatmap_pivot = data_frames["heatmap_pivot"]
+        user_vol = data_frames["user_vol"]
+        avg_resp = data_frames["avg_resp"]
+        median_resp = data_frames["median_resp"]
+        daily_sentiment = data_frames["daily_sentiment"]
+        user_sent = data_frames["user_sent"]
+        starters = data_frames["starters"]
+        weekend_vol = data_frames["weekend_vol"]
+    else:
+        with st.spinner("Processing Data Model & Running Analytics..."):
+            dim_date, dim_user, fact_message = build_data_model(df_raw)
+            
+        if fact_message.empty:
+            st.error("Could not parse messages. Please ensure the file is a valid WhatsApp export.")
+            st.stop()
+            
+        total_messages = len(fact_message)
+        unique_users = len(dim_user)
+        num_days = len(dim_date)
+        avg_msg_per_day = round(total_messages / num_days) if num_days > 0 else total_messages
+        
+        user_counts = fact_message.groupby('user_key').size()
+        if not user_counts.empty:
+            top_user_key = user_counts.idxmax()
+            most_active_user = dim_user[dim_user['user_key'] == top_user_key]['user_name'].iloc[0]
+        else:
+            most_active_user = "N/A"
+            
+        peak_hour = fact_message['hour_of_day'].mode()
+        peak_hour_str = f"{peak_hour.iloc[0]}:00" if not peak_hour.empty else "N/A"
+        avg_sentiment = fact_message['sentiment_score'].mean()
+        
+        # Setup tables
+        data_frames = {}
+        fact_with_date = fact_message.merge(dim_date, on='date_key')
+        fact_with_user = fact_message.merge(dim_user, on='user_key')
+        
+        daily_vol = fact_with_date.groupby('full_date').size().reset_index(name='count')
+        data_frames["daily_vol"] = daily_vol
+        
+        hourly_vol = fact_message.groupby('hour_of_day').size().reset_index(name='count')
+        data_frames["hourly_vol"] = hourly_vol
+        
+        heatmap_data = fact_with_date.groupby(['day_name', 'hour_of_day']).size().reset_index(name='count')
+        heatmap_pivot = heatmap_data.pivot(index='day_name', columns='hour_of_day', values='count').fillna(0)
+        heatmap_pivot = heatmap_pivot.reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+        data_frames["heatmap_pivot"] = heatmap_pivot
+        
+        user_vol = fact_with_user.groupby('user_name').size().reset_index(name='count').sort_values('count', ascending=True)
+        data_frames["user_vol"] = user_vol
+        
+        # User Stats Table
+        user_stats = fact_with_user.groupby('user_name').agg(
+            total_messages=('message_id', 'count'),
+            avg_message_length=('message_length', 'mean'),
+            avg_response_time=('response_time_minutes', lambda x: x[x>0].mean()),
+            median_response_time=('response_time_minutes', lambda x: x[x>0].median()),
+            avg_sentiment=('sentiment_score', 'mean')
+        ).reset_index()
+        user_days = fact_with_user.groupby(['user_name', 'date_key']).size().reset_index()
+        user_days_count = user_days.groupby('user_name').size().reset_index(name='active_days')
+        user_stats = user_stats.merge(user_days_count, on='user_name')
+        user_stats['msgs_per_active_day'] = user_stats['total_messages'] / user_stats['active_days']
+        user_stats = user_stats.round(2).sort_values('total_messages', ascending=False).reset_index(drop=True)
+
+        valid_responses = fact_with_user[fact_with_user['response_time_minutes'] > 0]
+        avg_resp = valid_responses.groupby('user_name')['response_time_minutes'].mean().reset_index(name='avg_resp').sort_values('avg_resp')
+        median_resp = valid_responses.groupby('user_name')['response_time_minutes'].median().reset_index(name='median_resp').sort_values('median_resp')
+        data_frames["avg_resp"] = avg_resp
+        data_frames["median_resp"] = median_resp
+        
+        daily_sentiment = fact_with_date.groupby('full_date')['sentiment_score'].mean().reset_index()
+        daily_sentiment['rolling_7d'] = daily_sentiment['sentiment_score'].rolling(window=7, min_periods=1).mean()
+        data_frames["daily_sentiment"] = daily_sentiment
+        
+        user_sent = fact_with_user.groupby('user_name')['sentiment_score'].mean().reset_index().sort_values('sentiment_score')
+        data_frames["user_sent"] = user_sent
+        
+        first_msgs = fact_with_user.loc[fact_with_user.groupby('date_key')['DateTime'].idxmin()]
+        starters = first_msgs['user_name'].value_counts().reset_index()
+        starters.columns = ['user_name', 'count']
+        data_frames["starters"] = starters
+        
+        weekend_vol = fact_with_date.groupby('is_weekend').size().reset_index(name='count')
+        weekend_vol['day_type'] = weekend_vol['is_weekend'].map({True: 'Weekend', False: 'Weekday'})
+        data_frames["weekend_vol"] = weekend_vol
+
+    # --- DYNAMIC BUSINESS INTELLIGENCE INSIGHTS ---
+    insights = {}
+    
+    max_day_row = daily_vol.loc[daily_vol['count'].idxmax()]
+    insights["daily_vol"] = f"Activity peaked on {max_day_row['full_date'].strftime('%Y-%m-%d')} with {max_day_row['count']} messages sent. The line graph shows communication trends and patterns over time."
+    
+    peak_hr = hourly_vol.loc[hourly_vol['count'].idxmax()]['hour_of_day']
+    insights["hourly_vol"] = f"Communication is most concentrated at hour {peak_hr}:00, indicating a clear peak time for group interactions during this part of the day."
+    
+    insights["heatmap"] = f"The density distribution shows active interaction slots. Darker areas represent the absolute highest-volume hours in the week."
+    
+    if len(user_stats) > 0:
+        top_u = user_stats.iloc[0]['user_name']
+        top_u_count = user_stats.iloc[0]['total_messages']
+        insights["user_vol"] = f"{top_u} is the primary messaging driver with {top_u_count:,} messages. There is a clear divide in engagement levels among active users."
+        insights["user_share"] = f"{top_u} controls the largest share of voice in the group. This pie chart highlights who dominates the overall conversation flow."
+    else:
+        insights["user_vol"] = "No user metrics available."
+        insights["user_share"] = "No user conversation share metrics available."
+        
+    if len(avg_resp) > 0:
+        fast_u = avg_resp.iloc[0]['user_name']
+        fast_t = avg_resp.iloc[0]['avg_resp']
+        slow_u = avg_resp.iloc[-1]['user_name']
+        slow_t = avg_resp.iloc[-1]['avg_resp']
+        insights["response_time"] = f"{fast_u} responds the quickest (avg {fast_t:.1f} minutes), while {slow_u} has the longest delay (avg {slow_t:.1f} minutes)."
+    else:
+        insights["response_time"] = "No response metrics available."
+        
+    insights["sentiment_trend"] = "The rolling sentiment chart highlights the overall group mood progression. Upswings indicate positive interaction periods."
+    
+    if len(user_sent) > 0:
+        pos_u = user_sent.iloc[-1]['user_name']
+        pos_v = user_sent.iloc[-1]['sentiment_score']
+        neg_u = user_sent.iloc[0]['user_name']
+        neg_v = user_sent.iloc[0]['sentiment_score']
+        insights["sentiment_compare"] = f"{pos_u} exhibits the most positive sentiment index ({pos_v:.2f}), whereas {neg_u} averages the most negative index ({neg_v:.2f})."
+    else:
+        insights["sentiment_compare"] = "No sentiment metrics available."
+        
+    if len(starters) > 0:
+        top_start = starters.iloc[0]['user_name']
+        top_start_count = starters.iloc[0]['count']
+        insights["starters"] = f"{top_start} is the primary conversation catalyst, initiating the group chat {top_start_count} times."
+    else:
+        insights["starters"] = "No starter stats available."
+        
+    weekday_c = weekend_vol[weekend_vol['day_type']=='Weekday']['count'].values
+    weekend_c = weekend_vol[weekend_vol['day_type']=='Weekend']['count'].values
+    wd_val = weekday_c[0] if len(weekday_c)>0 else 1
+    we_val = weekend_c[0] if len(weekend_c)>0 else 0
+    insights["weekend_vol"] = f"Weekday volume is {wd_val:,} messages vs Weekend volume of {we_val:,} messages. Communication shifts significantly based on the workweek schedule."
+
     # --- KPI CARDS ---
     col1, col2, col3, col4 = st.columns(4)
-    
-    total_messages = len(fact_message)
-    unique_users = len(dim_user)
-    num_days = len(dim_date)
-    avg_msg_per_day = round(total_messages / num_days) if num_days > 0 else total_messages
-    
-    user_counts = fact_message.groupby('user_key').size()
-    if not user_counts.empty:
-        top_user_key = user_counts.idxmax()
-        most_active_user = dim_user[dim_user['user_key'] == top_user_key]['user_name'].iloc[0]
-    else:
-        most_active_user = "N/A"
-        
-    peak_hour = fact_message['hour_of_day'].mode()
-    peak_hour_str = f"{peak_hour.iloc[0]}:00" if not peak_hour.empty else "N/A"
-    avg_sentiment = fact_message['sentiment_score'].mean()
     
     col1.metric("Total Messages", f"{total_messages:,}")
     col2.metric("Unique Users", f"{unique_users}")
@@ -752,133 +953,27 @@ if df_raw is not None and not df_raw.empty:
     col1b, col2b, col3b, col4b = st.columns(4)
     col1b.metric("Peak Activity Hour", peak_hour_str)
     col2b.metric("Avg Sentiment Score", f"{avg_sentiment:.2f}")
-    
-    data_frames = {}
-    
-    fact_with_date = fact_message.merge(dim_date, on='date_key')
-    fact_with_user = fact_message.merge(dim_user, on='user_key')
-    
-    # Analytics data preparation
-    daily_vol = fact_with_date.groupby('full_date').size().reset_index(name='count')
-    data_frames["daily_vol"] = daily_vol
-    
-    hourly_vol = fact_message.groupby('hour_of_day').size().reset_index(name='count')
-    data_frames["hourly_vol"] = hourly_vol
-    
-    heatmap_data = fact_with_date.groupby(['day_name', 'hour_of_day']).size().reset_index(name='count')
-    heatmap_pivot = heatmap_data.pivot(index='day_name', columns='hour_of_day', values='count').fillna(0)
-    heatmap_pivot = heatmap_pivot.reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
-    data_frames["heatmap_pivot"] = heatmap_pivot
-    
-    user_vol = fact_with_user.groupby('user_name').size().reset_index(name='count').sort_values('count', ascending=True)
-    data_frames["user_vol"] = user_vol
-    
-    # User Engagement Stats Table
-    user_stats = fact_with_user.groupby('user_name').agg(
-        total_messages=('message_id', 'count'),
-        avg_message_length=('message_length', 'mean'),
-        avg_response_time=('response_time_minutes', lambda x: x[x>0].mean()),
-        median_response_time=('response_time_minutes', lambda x: x[x>0].median()),
-        avg_sentiment=('sentiment_score', 'mean')
-    ).reset_index()
-    user_days = fact_with_user.groupby(['user_name', 'date_key']).size().reset_index()
-    user_days_count = user_days.groupby('user_name').size().reset_index(name='active_days')
-    user_stats = user_stats.merge(user_days_count, on='user_name')
-    user_stats['msgs_per_active_day'] = user_stats['total_messages'] / user_stats['active_days']
-    user_stats = user_stats.round(2).sort_values('total_messages', ascending=False).reset_index(drop=True)
 
-    # Response times
-    valid_responses = fact_with_user[fact_with_user['response_time_minutes'] > 0]
-    avg_resp = valid_responses.groupby('user_name')['response_time_minutes'].mean().reset_index(name='avg_resp').sort_values('avg_resp')
-    median_resp = valid_responses.groupby('user_name')['response_time_minutes'].median().reset_index(name='median_resp').sort_values('median_resp')
-    data_frames["avg_resp"] = avg_resp
-    data_frames["median_resp"] = median_resp
+    # Generate PDF and PPTX bytes ahead of time so they download natively on click without rerunning or redirecting the tabs!
+    kpis = {
+        "Total Messages": total_messages,
+        "Unique Users": unique_users,
+        "Average Messages / Day": avg_msg_per_day,
+        "Most Active User": most_active_user,
+        "Peak Activity Hour": peak_hour_str,
+        "Average Sentiment Score": round(avg_sentiment, 2)
+    }
     
-    # Sentiment
-    daily_sentiment = fact_with_date.groupby('full_date')['sentiment_score'].mean().reset_index()
-    daily_sentiment['rolling_7d'] = daily_sentiment['sentiment_score'].rolling(window=7, min_periods=1).mean()
-    data_frames["daily_sentiment"] = daily_sentiment
+    pdf_report_bytes = generate_pdf_report_with_fallback(kpis, data_frames, user_stats, insights)
     
-    user_sent = fact_with_user.groupby('user_name')['sentiment_score'].mean().reset_index().sort_values('sentiment_score')
-    data_frames["user_sent"] = user_sent
-    
-    # Starters
-    first_msgs = fact_with_user.loc[fact_with_user.groupby('date_key')['DateTime'].idxmin()]
-    starters = first_msgs['user_name'].value_counts().reset_index()
-    starters.columns = ['user_name', 'count']
-    data_frames["starters"] = starters
-    
-    # Weekend
-    weekend_vol = fact_with_date.groupby('is_weekend').size().reset_index(name='count')
-    weekend_vol['day_type'] = weekend_vol['is_weekend'].map({True: 'Weekend', False: 'Weekday'})
-    data_frames["weekend_vol"] = weekend_vol
-    
-    # --- DYNAMIC BUSINESS INTELLIGENCE INSIGHTS ---
-    insights = {}
-    
-    # 1. Daily Volume Insight
-    max_day_row = daily_vol.loc[daily_vol['count'].idxmax()]
-    insights["daily_vol"] = f"Activity peaked on {max_day_row['full_date'].strftime('%Y-%m-%d')} with {max_day_row['count']} messages sent. The line graph shows communication trends and patterns over time."
-    
-    # 2. Hourly Volume Insight
-    peak_hr = hourly_vol.loc[hourly_vol['count'].idxmax()]['hour_of_day']
-    insights["hourly_vol"] = f"Communication is most concentrated at hour {peak_hr}:00, indicating a clear peak time for group interactions during this part of the day."
-    
-    # 3. Heatmap Insight
-    insights["heatmap"] = f"The density distribution shows active interaction slots. Darker areas represent the absolute highest-volume hours in the week."
-    
-    # 4. User Volume Insight
-    if len(user_stats) > 0:
-        top_u = user_stats.iloc[0]['user_name']
-        top_u_count = user_stats.iloc[0]['total_messages']
-        insights["user_vol"] = f"{top_u} is the primary messaging driver with {top_u_count:,} messages. There is a clear divide in engagement levels among active users."
-        insights["user_share"] = f"{top_u} controls the largest share of voice in the group. This pie chart highlights who dominates the overall conversation flow."
-    else:
-        insights["user_vol"] = "No user metrics available."
-        insights["user_share"] = "No user conversation share metrics available."
-        
-    # 5. Response Time Insight
-    if len(avg_resp) > 0:
-        fast_u = avg_resp.iloc[0]['user_name']
-        fast_t = avg_resp.iloc[0]['avg_resp']
-        slow_u = avg_resp.iloc[-1]['user_name']
-        slow_t = avg_resp.iloc[-1]['avg_resp']
-        insights["response_time"] = f"{fast_u} responds the quickest (avg {fast_t:.1f} minutes), while {slow_u} has the longest delay (avg {slow_t:.1f} minutes)."
-    else:
-        insights["response_time"] = "No response metrics available."
-        
-    # 6. Sentiment Trend Insight
-    insights["sentiment_trend"] = "The rolling sentiment chart highlights the overall group mood progression. Upswings indicate positive interaction periods."
-    
-    # 7. Sentiment Compare Insight
-    if len(user_sent) > 0:
-        pos_u = user_sent.iloc[-1]['user_name']
-        pos_v = user_sent.iloc[-1]['sentiment_score']
-        neg_u = user_sent.iloc[0]['user_name']
-        neg_v = user_sent.iloc[0]['sentiment_score']
-        insights["sentiment_compare"] = f"{pos_u} exhibits the most positive sentiment index ({pos_v:.2f}), whereas {neg_u} averages the most negative index ({neg_v:.2f})."
-    else:
-        insights["sentiment_compare"] = "No sentiment metrics available."
-        
-    # 8. Starters Insight
-    if len(starters) > 0:
-        top_start = starters.iloc[0]['user_name']
-        top_start_count = starters.iloc[0]['count']
-        insights["starters"] = f"{top_start} is the primary conversation catalyst, initiating the group chat {top_start_count} times."
-    else:
-        insights["starters"] = "No starter stats available."
-        
-    # 9. Weekend Vol Insight
-    weekday_c = weekend_vol[weekend_vol['day_type']=='Weekday']['count'].values
-    weekend_c = weekend_vol[weekend_vol['day_type']=='Weekend']['count'].values
-    wd_val = weekday_c[0] if len(weekday_c)>0 else 1
-    we_val = weekend_c[0] if len(weekend_c)>0 else 0
-    insights["weekend_vol"] = f"Weekday volume is {wd_val:,} messages vs Weekend volume of {we_val:,} messages. Communication shifts significantly based on the workweek schedule."
+    pptx_report_bytes = None
+    if pptx_installed:
+        pptx_report_bytes = generate_pptx_report(kpis, data_frames, user_stats, insights)
 
     st.markdown("<br>", unsafe_allow_html=True)
     
     # --- APP TABS ---
-    tab1, tab2, tab3, tab4 = st.tabs(["Activity Trends", "User Analytics", "Sentiment & Patterns", "Generate Report"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Activity Trends", "User Analytics", "Sentiment & Patterns", "Generate Report", "Share Dashboard"])
     
     with tab1:
         c1, c2 = st.columns(2)
@@ -938,47 +1033,57 @@ if df_raw is not None and not df_raw.empty:
     with tab4:
         st.markdown("### Export BI Presentations & Reports")
         
-        kpis = {
-            "Total Messages": total_messages,
-            "Unique Users": unique_users,
-            "Average Messages / Day": avg_msg_per_day,
-            "Most Active User": most_active_user,
-            "Peak Activity Hour": peak_hour_str,
-            "Average Sentiment Score": round(avg_sentiment, 2)
-        }
-        
         c_pdf, c_ppt = st.columns(2)
         
         with c_pdf:
             st.markdown("#### PDF Report")
             st.write("Download a detailed and fully labeled PDF document containing all tables, charts, and analysis conclusions.")
-            if st.button("Generate PDF Report", type="primary", use_container_width=True):
-                with st.spinner("Compiling PDF Report..."):
-                    try:
-                        pdf_bytes = generate_pdf_report_with_fallback(kpis, data_frames, user_stats, insights)
-                        b64 = base64.b64encode(pdf_bytes).decode()
-                        href = f'<a href="data:application/pdf;base64,{b64}" download="ChatPulse_Report.pdf" class="btn" style="display:block; text-align:center; padding:10px; background:#1B4EF5; color:white; border-radius:8px; text-decoration:none; font-weight:bold;">Download PDF Report</a>'
-                        st.markdown(href, unsafe_allow_html=True)
-                        st.success("PDF generated successfully!")
-                    except Exception as e:
-                        st.error(f"Failed to generate PDF: {str(e)}")
+            st.download_button(
+                label="Download PDF Report",
+                data=pdf_report_bytes,
+                file_name="ChatPulse_Report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
                         
         with c_ppt:
             st.markdown("#### PowerPoint Presentation")
-            st.write("Generate a formatted slide deck matching the dashboard layout, visual themes, and insights.")
+            st.write("Download a beautifully formatted slide deck matching the dashboard layout, visual themes, and insights.")
             if not pptx_installed:
-                st.warning("The 'python-pptx' library is missing or could not be loaded. Please run 'pip install python-pptx' to activate presentation slide generation.")
-            else:
-                if st.button("Generate PPTX Slides", type="primary", use_container_width=True):
-                    with st.spinner("Creating Presentation Slides..."):
-                        try:
-                            pptx_bytes = generate_pptx_report(kpis, data_frames, user_stats, insights)
-                            b64 = base64.b64encode(pptx_bytes).decode()
-                            href = f'<a href="data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,{b64}" download="ChatPulse_Presentation.pptx" class="btn" style="display:block; text-align:center; padding:10px; background:#3874FF; color:white; border-radius:8px; text-decoration:none; font-weight:bold;">Download Presentation</a>'
-                            st.markdown(href, unsafe_allow_html=True)
-                            st.success("PowerPoint Presentation generated successfully!")
-                        except Exception as e:
-                            st.error(f"Failed to generate Presentation: {str(e)}")
+                st.warning("The 'python-pptx' library is missing. Slides generation is deactivated. Run 'pip install python-pptx' to activate.")
+            elif pptx_report_bytes is not None:
+                st.download_button(
+                    label="Download PPTX Slides",
+                    data=pptx_report_bytes,
+                    file_name="ChatPulse_Presentation.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True
+                )
+
+    with tab5:
+        st.markdown("### Share Dashboard Link")
+        st.write("Generate a custom encoded link to share these exact chat stats with others. When they visit this link, they will see your current dashboard directly without uploading any files.")
+        
+        share_str = get_share_string(kpis, data_frames, user_stats)
+        # Construct link URL
+        try:
+            share_url = f"https://chatpulse-bi.streamlit.app/?share={share_str}"
+        except:
+            share_url = f"http://localhost:8501/?share={share_str}"
+            
+        st.text_input("Copy Shareable Link", value=share_url)
+        st.info("Note: Anyone with this link can view the aggregated statistics and visual graphs of your chat analysis.")
+
+
+# --- Dummy Handler for Vercel Build Compatibility ---
+def handler(request, response=None):
+    return {
+        "statusCode": 200,
+        "body": "ChatPulse Streamlit application. Please run locally or deploy on Streamlit Community Cloud."
+    }
+
+app = handler
+
 
 else:
     if uploaded_file is None and not use_sample:
