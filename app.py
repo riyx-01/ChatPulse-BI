@@ -29,13 +29,18 @@ except ImportError:
 
 
 # --- Dummy Handler for Vercel Build Compatibility ---
-def handler(request, response=None):
-    return {
-        "statusCode": 200,
-        "body": "ChatPulse Streamlit application. Please run locally or deploy on Streamlit Community Cloud."
-    }
+from http.server import BaseHTTPRequestHandler
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write("ChatPulse BI is a Streamlit application. It cannot be hosted on Vercel Serverless Functions. Please run it locally or deploy it to Streamlit Community Cloud (share.streamlit.io).".encode())
+        return
 
 app = handler
+
 
 # --- Copy Logo to Workspace ---
 logo_source = r"C:\Users\riyat\.gemini\antigravity-ide\brain\5db50240-d5fc-4414-83cd-416f608a2b3b\media__1782980339372.png"
